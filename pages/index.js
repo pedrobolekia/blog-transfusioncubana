@@ -1,100 +1,71 @@
-import Head from "next/head";
-import Image from "next/image";
-import Link from "next/link";
-import { NextSeo } from "next-seo";
-import Layout from "@components/layout";
-import Container from "@components/container";
-import { useRouter } from "next/router";
-import { getClient, usePreviewSubscription } from "@lib/sanity";
-import defaultOG from "../public/img/opengraph.jpg";
-import { postquery, configQuery } from "@lib/groq";
-import GetImage from "@utils/getImage";
-import PostList from "@components/postlist";
+import Head from 'next/head'
+import styles from '../styles/Home.module.css'
+import { Toolbar } from '../components/toolbar';
+import imageUrlBuilder from '@sanity/image-url';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
 
-export default function Post(props) {
-  const { postdata, siteconfig, preview } = props;
-
+export default function Home({ posts }) {
   const router = useRouter();
-  //console.log(router.query.category);
+  const [mappedPosts, setMappedPosts] = useState([]);
 
-  const { data: posts } = usePreviewSubscription(postquery, {
-    initialData: postdata,
-    enabled: preview || router.query.preview !== undefined
-  });
+  useEffect(() => {
+    if (posts.length) {
+      const imgBuilder = imageUrlBuilder({
+        projectId: '40dxy42o',
+        dataset: 'production',
+      });
 
-  const { data: siteConfig } = usePreviewSubscription(configQuery, {
-    initialData: siteconfig,
-    enabled: preview || router.query.preview !== undefined
-  });
-  //console.log(posts);
-  const ogimage = siteConfig?.openGraphImage
-    ? GetImage(siteConfig?.openGraphImage).src
-    : defaultOG.src;
+      setMappedPosts(
+        posts.map(p => {
+          return {
+            ...p,
+            mainImage: imgBuilder.image(p.mainImage).width(500).height(250),
+          }
+        })
+      );
+    } else {
+      setMappedPosts([]);
+    }
+  }, [posts]);
+
   return (
-    <>
-      {posts && siteConfig && (
-        <Layout {...siteConfig}>
-          <NextSeo
-            title={`${siteConfig?.title}`}
-            description={siteConfig?.description || ""}
-            canonical={siteConfig?.url}
-            openGraph={{
-              url: siteConfig?.url,
-              title: `${siteConfig?.title}`,
-              description: siteConfig?.description || "",
-              images: [
-                {
-                  url: "",
-                  width: 800,
-                  height: 600,
-                  alt: ""
-                }
-              ],
-              site_name: "Web3Forms"
-            }}
-            twitter={{
-              cardType: "summary_large_image"
-            }}
-          />
-          <Container>
-            <div className="grid gap-10 lg:gap-10 md:grid-cols-2 ">
-              {posts.slice(0, 2).map(post => (
-                <PostList
-                  key={post._id}
-                  post={post}
-                  aspect="landscape"
-                />
-              ))}
+    <div>
+      <Toolbar />
+      <div className={styles.main}>
+        <h1>Welcome To My Blog</h1>
+
+        <h3>Recent Posts:</h3>
+
+        <div className={styles.feed}>
+          {mappedPosts.length ? mappedPosts.map((p, index) => (
+            <div onClick={() => router.push(`/post/${p.slug.current}`)} key={index} className={styles.post}>
+              <h3>{p.title}</h3>
+              <img className={styles.mainImage} src={p.mainImage} />
             </div>
-            <div className="grid gap-10 mt-10 lg:gap-10 md:grid-cols-2 xl:grid-cols-3 ">
-              {posts.slice(2).map(post => (
-                <PostList
-                  key={post._id}
-                  post={post}
-                  aspect="square"
-                />
-              ))}
-            </div>
-          </Container>
-        </Layout>
-      )}
-    </>
+          )) : <>No Posts Yet</>}
+        </div>
+      </div>
+    </div>
   );
 }
 
-export async function getStaticProps({ params, preview = false }) {
-  const post = await getClient(preview).fetch(postquery);
-  const config = await getClient(preview).fetch(configQuery);
+export const getServerSideProps = async pageContext => {
+  const query = encodeURIComponent('*[ _type == "post" ]');
+  const url = `https://40dxy42o.api.sanity.io/v1/data/query/production?query=${query}`;
+  const result = await fetch(url).then(res => res.json());
 
-  // const categories = (await client.fetch(catquery)) || null;
-
-  return {
-    props: {
-      postdata: post,
-      // categories: categories,
-      siteconfig: { ...config },
-      preview
-    },
-    revalidate: 10
-  };
-}
+  if (!result.result || !result.result.length) {
+    return {
+      props: {
+        posts: [],
+      }
+    }
+  } else {
+    return {
+      props: {
+        posts: result.result,
+      }
+    }
+  }
+};
